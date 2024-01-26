@@ -16,14 +16,17 @@ class GeneratorData():
         self.count_data = count_generated_data
         self.queue = data_queue
 
-    def start_genertion(self, sleep_time=1):
+    def start_genertion(self, generation_is_ending, sleep_time=1):
         fake = Faker()
         for i in range(self.count_data):
             sleep(sleep_time)
             data = fake.profile()
             self.queue.put(data)
             print(f'genrator: genrate {data["name"]}')
+
+        generation_is_ending.set()
         print(f'genrator: done')
+
 
 class ProcessorData():
     def __init__(self, data_queue, storage_file):
@@ -38,10 +41,10 @@ class ProcessorData():
         else:
             return False
 
-    def run_processing(self, lock):
+    def run_processing(self, lock, generation_is_ending):
         while True:
             try:
-                data = self.queue.get(timeout=10.0)
+                data = self.queue.get(timeout=60.0)
                 print(f'processor: {data["name"]}')
                 is_valid_data = self.validate_data(data)
 
@@ -58,6 +61,10 @@ class ProcessorData():
 
                 sleep(0.3)
             except queue.Empty as e:
+                print(f'Queue if empty for too long. Processing stop.')
+                break
+
+            if generation_is_ending.is_set():
                 print(f'processor Done')
                 break
 
@@ -69,9 +76,8 @@ class SenderData():
     def send_to_imaginary_server(self, data):
         pass
 
-    def run_sending(self, lock):
+    def run_sending(self, lock, generation_is_ending):
         batch_num = 0
-        count_cycles_without_data = 0
         while True:
             sleep(3)
             lock.acquire()
@@ -88,23 +94,20 @@ class SenderData():
                     print(f"sending {data["name"]}...")
                     self.send_to_imaginary_server(data)
                     sleep(1)
-                    print(f"{data["name"]} sended!")
+                    print(f"\n{data["name"]} sended!\n")
 
                 print(f'data batch num {batch_num} sended')
                 batch_num += 1
-                count_cycles_without_data = 0
             else:
                 lock.release()
-                count_cycles_without_data += 1
 
-            if count_cycles_without_data == 5:
+            if generation_is_ending.is_set():
+                print("Sender done")
                 break
-        print("Sender done")
 
 
 def main():
     # добавить аргументы и их валидацию
-    # добавить фэйкер
     # добавить доку
 
     storage_path = "./data.pickle"
@@ -114,14 +117,15 @@ def main():
 
     lock = multiprocessing.Lock()
     data_queue = multiprocessing.Queue()
+    generation_is_ending = multiprocessing.Event()
 
-    d_generator = GeneratorData(5, data_queue)
+    d_generator = GeneratorData(15, data_queue)
     d_processor = ProcessorData(data_queue, storage_path)
     d_sender = SenderData(storage_path)
 
-    p1 = multiprocessing.Process(target=d_generator.start_genertion, args=(1,))
-    p2 = multiprocessing.Process(target=d_processor.run_processing, args=(lock,))
-    p3 = multiprocessing.Process(target=d_sender.run_sending, args=(lock,))
+    p1 = multiprocessing.Process(target=d_generator.start_genertion, args=(generation_is_ending, 1,))
+    p2 = multiprocessing.Process(target=d_processor.run_processing, args=(lock, generation_is_ending,))
+    p3 = multiprocessing.Process(target=d_sender.run_sending, args=(lock, generation_is_ending,))
 
     p1.start()
     p2.start()
