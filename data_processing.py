@@ -1,7 +1,14 @@
 import multiprocessing
 import pickle
 import queue
+from datetime import datetime
 from time import sleep
+
+from dateutil.relativedelta import relativedelta
+from faker import Faker
+from faker.providers import profile
+
+Faker.seed(0)
 
 
 class GeneratorData():
@@ -10,10 +17,12 @@ class GeneratorData():
         self.queue = data_queue
 
     def start_genertion(self, sleep_time=1):
+        fake = Faker()
         for i in range(self.count_data):
             sleep(sleep_time)
-            self.queue.put(i)
-            print(f'genrator: genrate {i}')
+            data = fake.profile()
+            self.queue.put(data)
+            print(f'genrator: genrate {data["name"]}')
         print(f'genrator: done')
 
 class ProcessorData():
@@ -22,7 +31,9 @@ class ProcessorData():
         self.storage = storage_file
 
     def validate_data(self, data):
-        if type(data) is int:
+        birthdate = data["birthdate"]
+        current_age = relativedelta(datetime.now(), birthdate)
+        if 30 <= current_age.years < 41:
             return True
         else:
             return False
@@ -31,7 +42,7 @@ class ProcessorData():
         while True:
             try:
                 data = self.queue.get(timeout=10.0)
-                print(f'processor: {data}')
+                print(f'processor: {data["name"]}')
                 is_valid_data = self.validate_data(data)
 
                 if is_valid_data:
@@ -74,10 +85,10 @@ class SenderData():
                 lock.release()
 
                 for data in data_to_send:
-                    print(f"sending {data}...")
+                    print(f"sending {data["name"]}...")
                     self.send_to_imaginary_server(data)
                     sleep(1)
-                    print(f"{data} sended!")
+                    print(f"{data["name"]} sended!")
 
                 print(f'data batch num {batch_num} sended')
                 batch_num += 1
@@ -92,7 +103,6 @@ class SenderData():
 
 
 def main():
-    # отправить коммит с классами
     # добавить аргументы и их валидацию
     # добавить фэйкер
     # добавить доку
