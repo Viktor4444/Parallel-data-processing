@@ -9,21 +9,20 @@ from dateutil.relativedelta import relativedelta
 from faker import Faker
 from faker.providers import profile
 
-Faker.seed(0)
-
+Faker.seed(42)
 
 class GeneratorData():
-    def __init__(self, count_generated_data, data_queue):
-        self.count_data = count_generated_data
+    def __init__(self, data_queue, count_generated_data):
         self.queue = data_queue
+        self.count_data = count_generated_data
 
     def start_genertion(self, generation_is_ending, sleep_time=1):
         fake = Faker()
         for i in range(self.count_data):
-            sleep(sleep_time)
             data = fake.profile()
             self.queue.put(data)
             print(f'genrator: genrate {data["name"]}')
+            sleep(sleep_time)
 
         generation_is_ending.set()
         print(f'genrator: done')
@@ -34,7 +33,8 @@ class ProcessorData():
         self.queue = data_queue
         self.storage = storage_file
 
-    def validate_data(self, data):
+    @staticmethod
+    def validate_data(data):
         birthdate = data["birthdate"]
         current_age = relativedelta(datetime.now(), birthdate)
         if 30 <= current_age.years < 41:
@@ -45,7 +45,7 @@ class ProcessorData():
     def run_processing(self, lock, generation_is_ending, sleep_time=0.3):
         while True:
             try:
-                data = self.queue.get(timeout=60.0)
+                data = self.queue.get(timeout=30.0)
                 print(f'processor: {data["name"]}')
                 is_valid_data = self.validate_data(data)
 
@@ -62,8 +62,7 @@ class ProcessorData():
 
                 sleep(sleep_time)
             except queue.Empty as e:
-                print(f'Queue if empty for too long. Processing stop.')
-                break
+                print(f'Queue if empty for too long.')
 
             if generation_is_ending.is_set():
                 print(f'processor Done')
@@ -77,6 +76,7 @@ class SenderData():
 
     def send_to_imaginary_server(self, data):
         self.address
+        sleep(1)
         pass
 
     def run_sending(self, lock, generation_is_ending, sleep_time=3):
@@ -96,7 +96,6 @@ class SenderData():
                 for data in data_to_send:
                     print(f"sending {data["name"]}...")
                     self.send_to_imaginary_server(data)
-                    sleep(1)
                     print(f"\n{data["name"]} sended!\n")
 
                 print(f'data batch num {batch_num} sended')
@@ -117,7 +116,7 @@ def parse_args() -> argparse.ArgumentParser:
     parser.add_argument(
         '-c', '--count',
         type=int,
-        default=10,
+        required=True,
         help='how much data needs to be generated'
         )
     parser.add_argument(
@@ -132,22 +131,33 @@ def parse_args() -> argparse.ArgumentParser:
         default="img.serv.com",
         help='address of the server to send'
         )
+    # parser.add_argument(
+    #   '--set_seed',
+    #   action='store_true',
+    #   help='Specify this argument if you want '
+    #   'that the experiment was be repeatable'
+    #   )
     return parser.parse_args()
+
 
 def main():
     # добавить доку
-
     args = parse_args()
 
-    inital_lsit=[]
-    with open(args.storage, "wb") as file:
-        pickle.dump(inital_lsit, file)
+    try:
+        inital_lsit=[]
+        with open(args.storage, "wb") as file:
+            pickle.dump(inital_lsit, file)
+    except IOError as error:
+        raise IOError(
+            'Storage file was not found, please check path to storage.'
+            )
 
     lock = multiprocessing.Lock()
     data_queue = multiprocessing.Queue()
     generation_is_ending = multiprocessing.Event()
 
-    d_generator = GeneratorData(args.count, data_queue)
+    d_generator = GeneratorData(data_queue, args.count)
     d_processor = ProcessorData(data_queue, args.storage)
     d_sender = SenderData(args.storage, args.address)
 
