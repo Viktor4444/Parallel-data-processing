@@ -1,3 +1,4 @@
+import argparse
 import multiprocessing
 import pickle
 import queue
@@ -41,7 +42,7 @@ class ProcessorData():
         else:
             return False
 
-    def run_processing(self, lock, generation_is_ending):
+    def run_processing(self, lock, generation_is_ending, sleep_time=0.3):
         while True:
             try:
                 data = self.queue.get(timeout=60.0)
@@ -59,7 +60,7 @@ class ProcessorData():
                         pickle.dump(file_data, file)
                     lock.release()
 
-                sleep(0.3)
+                sleep(sleep_time)
             except queue.Empty as e:
                 print(f'Queue if empty for too long. Processing stop.')
                 break
@@ -70,16 +71,18 @@ class ProcessorData():
 
 
 class SenderData():
-    def __init__(self, storage_file):
+    def __init__(self, storage_file, server_address):
         self.storage = storage_file
+        self.address = server_address
 
     def send_to_imaginary_server(self, data):
+        self.address
         pass
 
-    def run_sending(self, lock, generation_is_ending):
+    def run_sending(self, lock, generation_is_ending, sleep_time=3):
         batch_num = 0
         while True:
-            sleep(3)
+            sleep(sleep_time)
             lock.acquire()
             with open(self.storage, "rb") as file:
                 file_data = pickle.load(file)
@@ -106,34 +109,68 @@ class SenderData():
                 break
 
 
+def parse_args() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description='Script that simulates parallel '
+        'computing, processing, and sending data'
+        )
+    parser.add_argument(
+        '-c', '--count',
+        type=int,
+        default=10,
+        help='how much data needs to be generated'
+        )
+    parser.add_argument(
+        '-s', '--storage',
+        type=str,
+        default="./data.pickle",
+        help='path to file where the data is stored'
+        )
+    parser.add_argument(
+        '-a', '--address',
+        type=str,
+        default="img.serv.com",
+        help='address of the server to send'
+        )
+    return parser.parse_args()
+
 def main():
-    # добавить аргументы и их валидацию
     # добавить доку
 
-    storage_path = "./data.pickle"
+    args = parse_args()
+
     inital_lsit=[]
-    with open(storage_path, "wb") as file:
+    with open(args.storage, "wb") as file:
         pickle.dump(inital_lsit, file)
 
     lock = multiprocessing.Lock()
     data_queue = multiprocessing.Queue()
     generation_is_ending = multiprocessing.Event()
 
-    d_generator = GeneratorData(15, data_queue)
-    d_processor = ProcessorData(data_queue, storage_path)
-    d_sender = SenderData(storage_path)
+    d_generator = GeneratorData(args.count, data_queue)
+    d_processor = ProcessorData(data_queue, args.storage)
+    d_sender = SenderData(args.storage, args.address)
 
-    p1 = multiprocessing.Process(target=d_generator.start_genertion, args=(generation_is_ending, 1,))
-    p2 = multiprocessing.Process(target=d_processor.run_processing, args=(lock, generation_is_ending,))
-    p3 = multiprocessing.Process(target=d_sender.run_sending, args=(lock, generation_is_ending,))
+    p_generator = multiprocessing.Process(
+        target=d_generator.start_genertion,
+        args=(generation_is_ending,)
+        )
+    p_processor = multiprocessing.Process(
+        target=d_processor.run_processing,
+        args=(lock, generation_is_ending,)
+        )
+    p_sender = multiprocessing.Process(
+        target=d_sender.run_sending,
+        args=(lock, generation_is_ending,)
+        )
 
-    p1.start()
-    p2.start()
-    p3.start()
+    p_generator.start()
+    p_processor.start()
+    p_sender.start()
 
-    p1.join()
-    p2.join()
-    p3.join()
+    p_generator.join()
+    p_processor.join()
+    p_sender.join()
 
 
 def test_data():
